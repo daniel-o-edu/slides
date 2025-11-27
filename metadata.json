@@ -1,0 +1,5 @@
+{
+  "name": "AutoSlide GenAI",
+  "description": "An intelligent presentation generator that converts raw text into formatted 4:3 slides using Gemini AI, with theme customization and PDF/HTML export.",
+  "requestFramePermissions": []
+}
