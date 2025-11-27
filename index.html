@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -12,24 +12,30 @@
         theme: {
           extend: {
             fontFamily: { sans: ['Inter', 'sans-serif'] },
-            aspectRatio: { '4/3': '4 / 3' },
+            colors: {
+                brand: {
+                    black: '#1a1a1a',
+                    gray: '#f4f4f5',
+                    accent: '#2563eb'
+                }
+            }
           },
         },
       }
     </script>
     
     <!-- Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,600;1,400&family=Montserrat:wght@400;600;800&family=Open+Sans:wght@400;600&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     
     <!-- PDF & Office Libraries -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <!-- PDF.js for reading PDFs -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
     </script>
-    <!-- PptxGenJS for Google Slides/PowerPoint export -->
     <script src="https://cdn.jsdelivr.net/gh/gitbrent/pptxgenjs@3.12.0/dist/pptxgen.bundle.js"></script>
 
     <!-- PyScript -->
@@ -41,49 +47,66 @@
 {
   "imports": {
     "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
     "react": "https://aistudiocdn.com/react@^19.2.0",
-    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0",
-    "react/": "https://aistudiocdn.com/react@^19.2.0/"
+    "lucide-react": "https://aistudiocdn.com/lucide-react@^0.555.0"
   }
 }
 </script>
 
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .slide-content ul { list-style-type: disc; padding-left: 1.5rem; }
-        .loading-spinner {
-            border: 3px solid rgba(255,255,255,0.3);
+        body { font-family: 'Inter', sans-serif; background-color: #fafafa; color: #1a1a1a; }
+        
+        /* Minimalist Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 2px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a1a1aa; }
+
+        /* Custom Color Input Styling */
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 32px;
+            height: 32px;
             border-radius: 50%;
-            border-top: 3px solid #fff;
-            width: 20px;
-            height: 20px;
+            cursor: pointer;
+            overflow: hidden;
+            padding: 0;
+            background: none;
+            box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+        input[type="color"]::-webkit-color-swatch { border: none; border-radius: 50%; }
+        
+        .loading-spinner {
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top: 2px solid #fff;
+            width: 16px;
+            height: 16px;
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
     </style>
 </head>
-<body class="bg-gray-100 h-screen w-full flex overflow-hidden">
+<body class="h-screen w-full flex overflow-hidden">
 
     <!-- JS Bridge -->
     <script type="module">
         import { GoogleGenAI, Type } from "@google/genai";
 
-        // Expose API Key (Injected by environment)
         window.API_KEY = process.env.API_KEY;
 
-        // --- 1. PDF Extraction Service ---
+        // --- 1. PDF Extraction ---
         window.extractPdfTextJS = async (fileInputId) => {
             const input = document.getElementById(fileInputId);
             if (!input.files || !input.files[0]) return null;
-
             const file = input.files[0];
             const arrayBuffer = await file.arrayBuffer();
             const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
-            
             let fullText = "";
-            // Limit to first 10 pages to avoid token limits
-            const maxPages = Math.min(pdf.numPages, 10);
-            
+            const maxPages = Math.min(pdf.numPages, 8); // Limit pages for performance
             for (let i = 1; i <= maxPages; i++) {
                 const page = await pdf.getPage(i);
                 const textContent = await page.getTextContent();
@@ -93,19 +116,24 @@
             return fullText;
         };
 
-        // --- 2. Gemini Service ---
+        // --- 2. Gemini Service (Portuguese Prompt) ---
         window.generateSlidesJS = async (apiKey, topic, includeImages) => {
             if (!apiKey) throw new Error("API Key not found");
             const ai = new GoogleGenAI({ apiKey: apiKey });
             
-            let prompt = `Create a presentation based on the following text/topic: "${topic}". 
-            Break it down into logical slides. 
-            The first slide should be a Title slide. 
-            The last slide should be a Summary slide.
-            Keep bullet points concise. Return JSON.`;
+            // Explicitly requesting Portuguese content
+            let prompt = `Atue como um especialista em apresentações. Crie uma apresentação de slides baseada no seguinte tópico ou texto: "${topic}".
+            
+            Requisitos:
+            1. O idioma da resposta deve ser **Português do Brasil (pt-BR)**.
+            2. Estruture em slides lógicos.
+            3. O primeiro slide deve ser Título.
+            4. O último slide deve ser Resumo/Conclusão.
+            5. Slides de conteúdo devem ter bullet points concisos.
+            6. Retorne estritamente JSON.`;
 
             if (includeImages) {
-                prompt += ` For each slide, also provide a short, descriptive English prompt for an AI image generator in the 'imageDescription' field.`;
+                prompt += ` Para cada slide, forneça também um 'imageDescription' (em inglês, para o gerador de imagem) descrevendo uma imagem visual minimalista e profissional para o fundo ou lateral.`;
             }
 
             const response = await ai.models.generateContent({
@@ -125,7 +153,7 @@
                                         title: { type: Type.STRING },
                                         content: { type: Type.ARRAY, items: { type: Type.STRING } },
                                         type: { type: Type.STRING, enum: ["title", "content", "summary"] },
-                                        imageDescription: { type: Type.STRING, description: "Visual description for background or side image" }
+                                        imageDescription: { type: Type.STRING }
                                     },
                                     required: ["title", "content", "type"]
                                 }
@@ -139,40 +167,30 @@
         };
 
         // --- 3. Export Services ---
-        
-        // PDF Export
         window.generatePDFJS = async (filename) => {
             const { jsPDF } = window.jspdf;
             const container = document.getElementById('pdf-hidden-container');
             const slides = container.querySelectorAll('.slide-node');
-            
             if (slides.length === 0) return;
-
-            const doc = new jsPDF({
-                orientation: 'landscape',
-                unit: 'px',
-                format: [800, 600]
-            });
+            
+            // 4:3 Ratio in Points (approx)
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [800, 600] });
 
             for (let i = 0; i < slides.length; i++) {
                 const slide = slides[i];
-                // Wait for images to load if any
                 const imgs = slide.querySelectorAll('img');
                 await Promise.all(Array.from(imgs).map(img => {
                     if (img.complete) return Promise.resolve();
                     return new Promise(resolve => { img.onload = resolve; img.onerror = resolve; });
                 }));
-
                 const canvas = await window.html2canvas(slide, { scale: 2, useCORS: true, logging: false });
                 const imgData = canvas.toDataURL('image/jpeg', 0.95);
-                
                 if (i > 0) doc.addPage([800, 600], 'landscape');
                 doc.addImage(imgData, 'JPEG', 0, 0, 800, 600);
             }
             doc.save(`${filename}.pdf`);
         };
 
-        // HTML Export
         window.downloadHTMLJS = (filename, content) => {
             const element = document.createElement('a');
             const file = new Blob([content], {type: 'text/html'});
@@ -183,192 +201,221 @@
             document.body.removeChild(element);
         };
 
-        // PPTX Export (Google Slides Compatible)
-        window.generatePPTXJS = (topic, slidesData, themeData) => {
+        window.generatePPTXJS = (topic, slidesData, themeData, fontName) => {
             const pres = new PptxGenJS();
             pres.layout = 'LAYOUT_4x3';
             pres.title = topic;
-            pres.author = 'AutoSlide AI';
-
-            // Helper to get image URL if exists
-            const getImageUrl = (desc) => {
-                if (!desc) return null;
-                return `https://image.pollinations.ai/prompt/${encodeURIComponent(desc)}?width=800&height=600&nologo=true`;
-            };
-
+            
             const bgHex = themeData.bg.replace('#', '');
             const textHex = themeData.text.replace('#', '');
             const accentHex = themeData.accent.replace('#', '');
+            
+            const fontMap = { 'Inter': 'Arial', 'Roboto': 'Arial', 'Lora': 'Georgia', 'Montserrat': 'Verdana', 'Open Sans': 'Calibri' };
+            const pptFont = fontMap[fontName] || 'Arial';
 
             slidesData.forEach((slide) => {
                 let pptSlide = pres.addSlide();
                 pptSlide.background = { color: bgHex };
-                
-                // Title
-                pptSlide.addText(slide.title, { 
-                    x: 0.5, y: 0.5, w: '90%', h: 1, 
-                    fontSize: 32, color: accentHex, bold: true, align: 'center' 
-                });
+                const getImageUrl = (desc) => desc ? `https://image.pollinations.ai/prompt/${encodeURIComponent(desc)}?width=800&height=600&nologo=true` : null;
 
-                // Image
-                if (slide.imageDescription) {
-                   const imgUrl = getImageUrl(slide.imageDescription);
-                   // Place image on the right or background depending on layout
-                   if (slide.type === 'title' || slide.type === 'summary') {
-                       // Background image style (simulated with large image)
-                        pptSlide.addImage({ path: imgUrl, x: 0, y: 0, w: '100%', h: '100%', transparency: 85 });
-                   } else {
-                        pptSlide.addImage({ path: imgUrl, x: 5.5, y: 1.8, w: 4, h: 3 });
-                   }
-                }
-
-                // Content
-                if (slide.content && slide.content.length > 0) {
-                    let textConfig = { 
-                        x: 0.5, y: 1.8, w: slide.imageDescription ? '50%' : '90%', h: 4, 
-                        fontSize: 18, color: textHex, bullet: true, align: 'left'
-                    };
-                    
-                    if (slide.type === 'title' || slide.type === 'summary') {
-                         textConfig.align = 'center';
-                         textConfig.bullet = false;
-                         textConfig.w = '90%';
+                if (slide.type === 'title' || slide.type === 'summary') {
+                    pptSlide.addText(slide.title, { x: 0.5, y: 2.5, w: '90%', h: 1, fontSize: 36, color: accentHex, bold: true, align: 'center', fontFace: pptFont });
+                    if (slide.imageDescription) {
+                         const url = getImageUrl(slide.imageDescription);
+                         pptSlide.addImage({ path: url, x: 0, y: 0, w: '100%', h: '100%', transparency: 85 });
                     }
-
-                    // Join content for pptx text body
-                    let contentText = slide.content.map(c => c).join('\n');
-                    pptSlide.addText(contentText, textConfig);
+                    if (slide.content.length > 0) {
+                        pptSlide.addText(slide.content.join('\n'), { x: 1, y: 3.8, w: '80%', h: 2, fontSize: 18, color: textHex, align: 'center', fontFace: pptFont });
+                    }
+                } else {
+                    pptSlide.addText(slide.title, { x: 0.5, y: 0.5, w: '90%', h: 1, fontSize: 32, color: accentHex, bold: true, align: 'left', fontFace: pptFont });
+                    let contentW = 9;
+                    if (slide.imageDescription) {
+                        const url = getImageUrl(slide.imageDescription);
+                        pptSlide.addImage({ path: url, x: 7, y: 1.5, w: 2.5, h: 2.5 });
+                        contentW = 6;
+                    }
+                    pptSlide.addText(slide.content.map(c => c).join('\n'), { x: 0.5, y: 1.5, w: contentW, h: 4.5, fontSize: 18, color: textHex, bullet: true, align: 'left', fontFace: pptFont, lineSpacing: 24 });
                 }
             });
-
             pres.writeFile({ fileName: `${topic.replace(/\s+/g, '_')}.pptx` });
         }
     </script>
 
-    <!-- App Container -->
+    <!-- App Shell -->
     <div id="app" class="flex w-full h-full">
-        <!-- Sidebar -->
-        <div class="w-96 bg-white border-r border-gray-200 flex flex-col shadow-xl z-10 flex-shrink-0">
-            <div class="p-6 border-b border-gray-100">
-                <h1 class="font-bold text-xl text-indigo-600 flex items-center gap-2">
-                    <span>🐍</span> AutoSlide Py
+        
+        <!-- Minimalist Sidebar -->
+        <div class="w-80 bg-white border-r border-gray-100 flex flex-col shadow-sm z-20 flex-shrink-0">
+            <!-- Branding -->
+            <div class="p-6">
+                <h1 class="font-bold text-xl text-black tracking-tight flex items-center gap-2">
+                    <span class="w-2 h-6 bg-brand-accent rounded-sm"></span>
+                    AutoSlide <span class="text-gray-400 font-normal">AI</span>
                 </h1>
             </div>
             
-            <div class="flex-1 overflow-y-auto p-6 space-y-6">
+            <div class="flex-1 overflow-y-auto px-6 pb-6 space-y-8">
                 
-                <!-- PDF Import -->
-                <div class="bg-indigo-50 p-4 rounded-lg border border-indigo-100">
-                    <label class="block text-xs font-semibold text-indigo-800 mb-2 uppercase tracking-wide">Import Content</label>
-                    <div class="flex items-center justify-center w-full">
-                        <label for="pdf-upload" class="flex flex-col items-center justify-center w-full h-24 border-2 border-indigo-300 border-dashed rounded-lg cursor-pointer hover:bg-indigo-100 transition-colors">
-                            <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                                <svg class="w-6 h-6 mb-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-                                <p class="mb-2 text-xs text-indigo-600"><span class="font-semibold">Click to upload PDF</span></p>
-                            </div>
+                <!-- Section 1: Content -->
+                <div class="space-y-4">
+                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Conteúdo</label>
+                    
+                    <div class="relative group">
+                         <label for="pdf-upload" class="flex items-center justify-center w-full px-4 py-3 border border-dashed border-gray-300 rounded-lg cursor-pointer hover:border-brand-accent hover:bg-blue-50 transition-all bg-gray-50">
+                            <svg class="w-5 h-5 text-gray-400 mr-2 group-hover:text-brand-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                            <span class="text-sm font-medium text-gray-600 group-hover:text-brand-accent">Importar PDF</span>
                             <input id="pdf-upload" type="file" class="hidden" accept=".pdf" />
                         </label>
                     </div>
-                </div>
 
-                <!-- Topic Input -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Topic / Content</label>
-                    <textarea id="topic-input" class="w-full h-32 p-3 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none" placeholder="Enter topic manually or import PDF..."></textarea>
+                    <textarea id="topic-input" class="w-full h-28 p-3 rounded-lg border border-gray-200 text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none resize-none bg-gray-50 placeholder-gray-400 transition-shadow" placeholder="Digite o tema ou cole seu texto aqui..."></textarea>
                     
-                    <!-- Options -->
-                    <div class="mt-3 flex items-center gap-2">
-                        <input type="checkbox" id="chk-images" class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
-                        <label for="chk-images" class="text-sm text-gray-700">Auto-generate Images</label>
+                    <div class="flex items-center justify-between">
+                        <label for="chk-images" class="text-sm font-medium text-gray-600 cursor-pointer select-none">Gerar Imagens (IA)</label>
+                        <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                            <input type="checkbox" name="chk-images" id="chk-images" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 appearance-none cursor-pointer border-gray-300 checked:right-0 checked:border-brand-accent transition-all"/>
+                            <label for="chk-images" class="toggle-label block overflow-hidden h-5 rounded-full bg-gray-300 cursor-pointer"></label>
+                        </div>
                     </div>
 
-                    <button id="generate-btn" py-click="controller.handle_generate" class="mt-4 w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium transition-colors flex justify-center items-center gap-2">
-                        <span>Generate Slides</span>
+                    <button id="generate-btn" py-click="controller.handle_generate" class="w-full py-3 bg-black hover:bg-gray-800 text-white rounded-lg text-sm font-semibold transition-transform active:scale-95 shadow-lg shadow-gray-200">
+                        Gerar Slides
                     </button>
                 </div>
 
-                <!-- Theme Selector -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Select Theme</label>
-                    <div id="theme-container" class="grid grid-cols-2 gap-2">
-                        <!-- Populated by Python -->
+                <hr class="border-gray-100">
+
+                <!-- Section 2: Design -->
+                 <div class="space-y-4">
+                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Estilo & Cores</label>
+                    
+                    <div>
+                        <span class="text-xs text-gray-500 mb-2 block">Tipografia</span>
+                        <select id="font-select" class="w-full p-2.5 text-sm border border-gray-200 rounded-lg bg-white focus:ring-1 focus:ring-black outline-none cursor-pointer">
+                            <option value="Inter" selected>Inter (Moderno)</option>
+                            <option value="Roboto">Roboto (Neutro)</option>
+                            <option value="Lora">Lora (Elegante)</option>
+                            <option value="Montserrat">Montserrat (Bold)</option>
+                            <option value="Open Sans">Open Sans (Amigável)</option>
+                        </select>
+                    </div>
+
+                    <!-- Custom Color Picker Menu -->
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-100 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Fundo</span>
+                            <div class="flex items-center gap-2">
+                                <span id="hex-bg" class="text-xs font-mono text-gray-400">#FFFFFF</span>
+                                <input type="color" id="col-bg" value="#ffffff" title="Cor de Fundo">
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Texto</span>
+                            <div class="flex items-center gap-2">
+                                <span id="hex-text" class="text-xs font-mono text-gray-400">#1A1A1A</span>
+                                <input type="color" id="col-text" value="#1a1a1a" title="Cor do Texto">
+                            </div>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm text-gray-600">Destaque</span>
+                            <div class="flex items-center gap-2">
+                                <span id="hex-accent" class="text-xs font-mono text-gray-400">#2563EB</span>
+                                <input type="color" id="col-accent" value="#2563eb" title="Cor de Destaque">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Quick Presets -->
+                    <div class="grid grid-cols-4 gap-2">
+                         <button id="preset-light" class="h-8 rounded border bg-white hover:ring-2 ring-black ring-offset-1" title="Claro"></button>
+                         <button id="preset-dark" class="h-8 rounded border bg-slate-900 hover:ring-2 ring-black ring-offset-1" title="Escuro"></button>
+                         <button id="preset-navy" class="h-8 rounded border bg-blue-900 hover:ring-2 ring-black ring-offset-1" title="Marinho"></button>
+                         <button id="preset-forest" class="h-8 rounded border bg-emerald-900 hover:ring-2 ring-black ring-offset-1" title="Floresta"></button>
                     </div>
                 </div>
 
-                <!-- Export -->
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Export</label>
-                    <div class="grid grid-cols-1 gap-2">
-                        <button py-click="controller.handle_export_pptx" class="flex items-center justify-center gap-2 p-2 border border-orange-200 bg-orange-50 hover:bg-orange-100 text-orange-700 rounded text-sm font-medium">
-                            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2M9 15H7v-2h2zm0-4H7V9h2zm4 4h-2v-2h2zm0-4h-2V9h2zm4 4h-2v-2h2zm0-4h-2V9h2z"/></svg>
-                            Google Slides (.pptx)
+                <hr class="border-gray-100">
+
+                <!-- Section 3: Export -->
+                <div class="space-y-4">
+                    <label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Exportar</label>
+                    <div class="grid grid-cols-3 gap-2">
+                        <button py-click="controller.handle_export_pptx" class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 transition-all text-gray-500">
+                            <span class="text-xs font-bold">PPTX</span>
                         </button>
-                        <div class="grid grid-cols-2 gap-2">
-                            <button py-click="controller.handle_export_pdf" class="p-2 border rounded hover:bg-gray-50 text-sm font-medium text-gray-700">PDF</button>
-                            <button py-click="controller.handle_export_html" class="p-2 border rounded hover:bg-gray-50 text-sm font-medium text-gray-700">HTML</button>
-                        </div>
+                        <button py-click="controller.handle_export_pdf" class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-all text-gray-500">
+                            <span class="text-xs font-bold">PDF</span>
+                        </button>
+                        <button py-click="controller.handle_export_html" class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-all text-gray-500">
+                            <span class="text-xs font-bold">HTML</span>
+                        </button>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Main Preview -->
-        <div class="flex-1 bg-slate-200 flex flex-col relative overflow-hidden">
+        <div class="flex-1 bg-gray-100 flex flex-col relative overflow-hidden">
             <!-- Toolbar -->
-            <div class="h-16 bg-white border-b flex items-center justify-between px-6 shadow-sm z-10">
-                <span id="header-topic" class="font-semibold text-gray-700 truncate">My Presentation</span>
+            <div class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 shadow-sm z-10">
+                <span id="header-topic" class="font-semibold text-gray-800 truncate text-base max-w-lg">Apresentação Sem Título</span>
                 <div class="flex items-center gap-4">
-                    <span id="slide-counter" class="text-sm text-gray-500 font-mono">1 / 1</span>
-                    <div class="flex gap-1">
-                        <button py-click="controller.prev_slide" class="p-2 hover:bg-gray-100 rounded text-gray-600">Previous</button>
-                        <button py-click="controller.next_slide" class="p-2 hover:bg-gray-100 rounded text-gray-600">Next</button>
+                    <span id="slide-counter" class="text-xs font-mono bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">1 / 1</span>
+                    <div class="flex gap-1 bg-gray-100 p-1 rounded-lg">
+                        <button py-click="controller.prev_slide" class="p-2 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                        </button>
+                        <button py-click="controller.next_slide" class="p-2 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                        </button>
                     </div>
                 </div>
             </div>
 
             <!-- Slide Stage -->
-            <div class="flex-1 flex items-center justify-center p-8 overflow-hidden">
-                <div id="slide-stage" class="w-full max-w-4xl shadow-2xl transition-all duration-300">
-                    <!-- Slide Rendered Here -->
+            <div class="flex-1 flex items-center justify-center p-10 overflow-hidden bg-gray-50/50">
+                <div id="slide-stage" class="w-full max-w-5xl shadow-2xl transition-all duration-300 rounded-xl ring-1 ring-black/5 bg-white">
+                    <!-- Rendered Slide -->
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Hidden Container for PDF Rendering -->
     <div id="pdf-hidden-container" class="absolute top-0 left-0 pointer-events-none opacity-0 -z-50 w-[800px]"></div>
 
-    <!-- Python Application Logic -->
+    <!-- Python Logic -->
     <script type="py">
 import json
 import asyncio
 from js import document, window, console, JSON
-from pyodide.ffi import create_proxy, to_js
+from pyodide.ffi import create_proxy
 
-# --- CONSTANTS ---
-THEMES = [
-    {"id": "modern-dark", "name": "Midnight", "bg": "#0f172a", "text": "#f8fafc", "accent": "#38bdf8", "is_dark": True},
-    {"id": "clean-light", "name": "Clean Day", "bg": "#ffffff", "text": "#1e293b", "accent": "#2563eb", "is_dark": False},
-    {"id": "forest", "name": "Forest", "bg": "#064e3b", "text": "#ecfdf5", "accent": "#34d399", "is_dark": True},
-    {"id": "sunset", "name": "Sunset", "bg": "#450a0a", "text": "#fff1f2", "accent": "#fb7185", "is_dark": True},
-]
-
+# Initial Portuguese Content
 INITIAL_SLIDES = [
-    {"title": "Welcome to AutoSlide Py", "content": ["Import PDF or enter topic", "Toggle images if desired", "Click Generate"], "type": "title"}
+    {
+        "title": "Bem-vindo ao AutoSlide", 
+        "content": ["Importe um PDF ou digite um tópico", "Customize as cores no menu lateral", "Clique em Gerar Slides"], 
+        "type": "title",
+        "imageDescription": ""
+    }
 ]
 
-# Initialize global controller variable to avoid NameError if accessed early
 controller = None
 
-# --- MODEL ---
 class PresentationModel:
     def __init__(self):
-        self.topic = "My Presentation"
+        self.topic = "Minha Apresentação"
         self.slides = INITIAL_SLIDES
-        self.current_theme = THEMES[0]
+        # Default Theme (Custom Object)
+        self.theme = {
+            "bg": "#ffffff",
+            "text": "#1a1a1a",
+            "accent": "#2563eb"
+        }
+        self.font = "Inter"
         self.current_index = 0
         self.is_generating = False
-        self.include_images = False
         self.observers = []
 
     def subscribe(self, observer):
@@ -384,12 +431,14 @@ class PresentationModel:
         self.current_index = 0
         self.notify()
 
-    def set_theme(self, theme_id):
-        for theme in THEMES:
-            if theme["id"] == theme_id:
-                self.current_theme = theme
-                self.notify()
-                break
+    def update_theme_color(self, key, value):
+        if key in self.theme:
+            self.theme[key] = value
+            self.notify()
+
+    def set_font(self, font_name):
+        self.font = font_name
+        self.notify()
 
     def next_slide(self):
         if self.current_index < len(self.slides) - 1:
@@ -405,136 +454,181 @@ class PresentationModel:
         self.is_generating = is_gen
         self.notify()
 
-# --- VIEW ---
 class PresentationView:
     def __init__(self):
         self.slide_stage = document.getElementById("slide-stage")
-        self.theme_container = document.getElementById("theme-container")
         self.slide_counter = document.getElementById("slide-counter")
         self.header_topic = document.getElementById("header-topic")
         self.topic_input = document.getElementById("topic-input")
         self.generate_btn = document.getElementById("generate-btn")
         self.pdf_container = document.getElementById("pdf-hidden-container")
         
-        # PDF Input
+        # Inputs
+        self.font_select = document.getElementById("font-select")
         self.pdf_upload = document.getElementById("pdf-upload")
+        
+        # Color Inputs
+        self.col_bg = document.getElementById("col-bg")
+        self.col_text = document.getElementById("col-text")
+        self.col_accent = document.getElementById("col-accent")
+        
+        # Hex Labels
+        self.hex_bg = document.getElementById("hex-bg")
+        self.hex_text = document.getElementById("hex-text")
+        self.hex_accent = document.getElementById("hex-accent")
+
+        # Presets
+        self.preset_light = document.getElementById("preset-light")
+        self.preset_dark = document.getElementById("preset-dark")
+        self.preset_navy = document.getElementById("preset-navy")
+        self.preset_forest = document.getElementById("preset-forest")
 
     def init_ui(self, model, controller_proxy):
-        # Render themes
-        self.theme_container.innerHTML = ""
-        for theme in THEMES:
-            btn = document.createElement("button")
-            btn.className = f"p-2 border rounded flex items-center gap-2 hover:border-indigo-500 transition-colors"
-            dot = f'<div class="w-4 h-4 rounded-full border" style="background-color: {theme["bg"]}"></div>'
-            btn.innerHTML = f'{dot}<span class="text-xs font-semibold">{theme["name"]}</span>'
-            
-            # Use controller_proxy passed in args, instead of global variable
-            def make_handler(tid, ctrl):
-                return lambda e: ctrl.set_theme(tid)
-            
-            btn.onclick = make_handler(theme["id"], controller_proxy)
-            self.theme_container.appendChild(btn)
-            
-        # Bind PDF Input listener using the proxy instance
+        # Bind Main Inputs
         self.pdf_upload.addEventListener("change", create_proxy(controller_proxy.handle_pdf_upload))
+        self.font_select.addEventListener("change", create_proxy(controller_proxy.handle_font_change))
+
+        # Bind Colors
+        self.col_bg.addEventListener("input", create_proxy(lambda e: controller_proxy.handle_color_change("bg", e.target.value)))
+        self.col_text.addEventListener("input", create_proxy(lambda e: controller_proxy.handle_color_change("text", e.target.value)))
+        self.col_accent.addEventListener("input", create_proxy(lambda e: controller_proxy.handle_color_change("accent", e.target.value)))
+
+        # Bind Presets
+        self.preset_light.addEventListener("click", create_proxy(lambda e: controller_proxy.apply_preset("#ffffff", "#1a1a1a", "#2563eb")))
+        self.preset_dark.addEventListener("click", create_proxy(lambda e: controller_proxy.apply_preset("#0f172a", "#f8fafc", "#38bdf8")))
+        self.preset_navy.addEventListener("click", create_proxy(lambda e: controller_proxy.apply_preset("#1e1b4b", "#e0e7ff", "#818cf8")))
+        self.preset_forest.addEventListener("click", create_proxy(lambda e: controller_proxy.apply_preset("#022c22", "#ecfdf5", "#34d399")))
 
         self.update(model)
 
     def get_image_url(self, description):
-        # Using Pollinations.ai for simple, free generative images
         if not description: return ""
         encoded = window.encodeURIComponent(description)
         return f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true"
 
-    def generate_html_string(self, slide, theme, index, total, width="100%", height="100%", is_preview=True):
-        bg_color = theme["bg"]
-        text_color = theme["text"]
+    def generate_html_string(self, slide, theme, index, total, font, is_preview=True):
+        bg = theme["bg"]
+        text = theme["text"]
         accent = theme["accent"]
+        
+        # Base typography scales
+        base_style = f"background-color: {bg}; color: {text}; font-family: '{font}', sans-serif;"
         
         img_html = ""
         if "imageDescription" in slide and slide["imageDescription"]:
              url = self.get_image_url(slide["imageDescription"])
-             img_html = f'<img src="{url}" class="absolute opacity-20 object-cover w-full h-full mix-blend-overlay" />'
-             # For content slides, maybe a side image?
-             if slide["type"] == "content":
-                 img_html = f'<div class="w-1/2 h-full absolute right-0 top-0 opacity-40"><img src="{url}" class="w-full h-full object-cover mask-image-gradient" /></div>'
-        
+             if slide["type"] in ["title", "summary"]:
+                 img_html = f'<div class="absolute inset-0 z-0 opacity-20 pointer-events-none"><img src="{url}" class="w-full h-full object-cover filter grayscale-[20%]" /></div>'
+             else:
+                 img_html = f'''
+                 <div class="flex justify-end items-center my-4 h-full absolute right-12 top-0 w-1/3">
+                    <img src="{url}" class="w-full h-auto rounded-lg shadow-xl object-cover aspect-square" />
+                 </div>'''
+
         content_html = ""
         
         if slide["type"] == "title":
-            items = "".join([f'<p class="text-xl opacity-80 mb-2 relative z-10">{item}</p>' for item in slide["content"]])
+            items = "".join([f'<p class="text-xl opacity-80 mt-6 font-light">{item}</p>' for item in slide["content"]])
             content_html = f'''
                 {img_html}
-                <div class="flex flex-col items-center justify-center h-full text-center p-12 relative z-10">
-                    <h1 class="text-5xl font-bold mb-6" style="color: {accent}">{slide["title"]}</h1>
+                <div class="relative z-10 flex flex-col items-center justify-center h-full p-16 text-center">
+                    <div class="w-16 h-2 mb-8 rounded-full" style="background-color: {accent}"></div>
+                    <h1 class="text-6xl font-bold mb-4 leading-tight tracking-tight">{slide["title"]}</h1>
                     <div class="max-w-2xl">{items}</div>
                 </div>
             '''
         elif slide["type"] == "summary":
-            items = "".join([f'<p class="text-2xl font-light mb-4 relative z-10">{item}</p>' for item in slide["content"]])
+            items = "".join([f'<p class="text-2xl mb-4 leading-relaxed font-light">{item}</p>' for item in slide["content"]])
             content_html = f'''
                 {img_html}
-                <div class="flex flex-col items-center justify-center h-full text-center p-12 relative">
-                    <div class="absolute top-0 left-0 w-32 h-32 opacity-10 rounded-br-full z-0" style="background-color: {accent}"></div>
-                    <h2 class="text-4xl font-bold mb-8 relative z-10" style="color: {accent}">{slide["title"]}</h2>
-                    <div class="space-y-4 relative z-10">{items}</div>
+                <div class="relative z-10 flex flex-col items-center justify-center h-full p-16 text-center">
+                    <h2 class="text-4xl font-bold mb-8" style="color: {accent}">{slide["title"]}</h2>
+                    <div class="max-w-3xl border-t border-b py-8" style="border-color: {text}30">
+                        {items}
+                    </div>
                 </div>
             '''
         else:
-            # Layout adjustment for image
-            list_width = "w-1/2" if img_html else "w-full"
-            items = "".join([f'<li class="mb-3 pl-2 flex"><span class="mr-2" style="color: {accent}">•</span>{item}</li>' for item in slide["content"]])
+            items = "".join([f'<li class="mb-4 text-2xl leading-relaxed pl-2">{item}</li>' for item in slide["content"]])
+            # Logic for layout based on image presence
+            width_class = "w-3/5" if img_html else "w-full max-w-4xl"
+            
             content_html = f'''
-                {img_html}
-                <div class="flex flex-col h-full p-12 relative z-10 {list_width}">
-                    <div class="mb-8 border-b pb-4" style="border-color: {theme["text"]}33">
-                        <h2 class="text-4xl font-bold" style="color: {accent}">{slide["title"]}</h2>
+                <div class="relative z-10 flex flex-col h-full p-12 px-16">
+                    <div class="flex items-center mb-10 pb-4 border-b-2" style="border-color: {accent}">
+                        <h2 class="text-4xl font-bold tracking-tight">{slide["title"]}</h2>
                     </div>
-                    <ul class="text-2xl flex-grow">{items}</ul>
+                    {img_html}
+                    <div class="{width_class} pr-8">
+                        <ul class="list-disc pl-8 marker:text-[{accent}]" style="marker-color: {accent}">{items}</ul>
+                    </div>
                 </div>
             '''
 
-        container_class = "w-full aspect-[4/3] shadow-2xl relative overflow-hidden select-none" if is_preview else "w-[800px] h-[600px] relative overflow-hidden slide-node mb-10"
+        container_class = "w-full aspect-[4/3] relative overflow-hidden select-none" if is_preview else "w-[800px] h-[600px] relative overflow-hidden slide-node mb-10"
         
         return f'''
-            <div class="{container_class}" style="background-color: {bg_color}; color: {text_color}; font-family: 'Inter', sans-serif;">
-                <div class="absolute top-0 right-0 w-2 h-full opacity-20" style="background-color: {accent}"></div>
+            <div class="{container_class}" style="{base_style}">
                 {content_html}
-                <div class="absolute bottom-4 right-6 text-sm opacity-50 font-mono z-20">{index + 1} / {total}</div>
+                <div class="absolute bottom-6 right-8 text-xs font-bold opacity-40 uppercase tracking-widest">{index + 1} / {total}</div>
             </div>
         '''
 
     def update(self, model):
+        # Sync Inputs
+        self.col_bg.value = model.theme["bg"]
+        self.hex_bg.innerText = model.theme["bg"].upper()
+        
+        self.col_text.value = model.theme["text"]
+        self.hex_text.innerText = model.theme["text"].upper()
+        
+        self.col_accent.value = model.theme["accent"]
+        self.hex_accent.innerText = model.theme["accent"].upper()
+
+        # Render Slide
         current_slide = model.slides[model.current_index]
-        html = self.generate_html_string(current_slide, model.current_theme, model.current_index, len(model.slides))
+        html = self.generate_html_string(
+            current_slide, 
+            model.theme, 
+            model.current_index, 
+            len(model.slides),
+            model.font
+        )
         self.slide_stage.innerHTML = html
         self.header_topic.innerText = model.topic
         self.slide_counter.innerText = f"{model.current_index + 1} / {len(model.slides)}"
 
         if model.is_generating:
             self.generate_btn.disabled = True
-            self.generate_btn.innerHTML = '<div class="loading-spinner"></div> Working...'
+            self.generate_btn.innerHTML = '<div class="loading-spinner inline-block mr-2"></div> Processando...'
             self.generate_btn.classList.add("opacity-75", "cursor-not-allowed")
         else:
             self.generate_btn.disabled = False
-            self.generate_btn.innerHTML = '<span>Generate Slides</span>'
+            self.generate_btn.innerHTML = 'Gerar Slides'
             self.generate_btn.classList.remove("opacity-75", "cursor-not-allowed")
 
     def prepare_pdf_dom(self, model):
         html_all = ""
         for i, slide in enumerate(model.slides):
-            html_all += self.generate_html_string(slide, model.current_theme, i, len(model.slides), is_preview=False)
+            html_all += self.generate_html_string(slide, model.theme, i, len(model.slides), model.font, is_preview=False)
         self.pdf_container.innerHTML = html_all
 
-# --- CONTROLLER ---
 class PresentationController:
     def __init__(self, model, view):
         self.model = model
         self.view = view
         self.view.init_ui(model, self)
 
-    def set_theme(self, theme_id):
-        self.model.set_theme(theme_id)
+    def handle_color_change(self, key, value):
+        self.model.update_theme_color(key, value)
+
+    def apply_preset(self, bg, text, accent):
+        self.model.update_theme_color("bg", bg)
+        self.model.update_theme_color("text", text)
+        self.model.update_theme_color("accent", accent)
+
+    def handle_font_change(self, event):
+        self.model.set_font(event.target.value)
 
     def next_slide(self, event=None):
         self.model.next_slide()
@@ -545,26 +639,20 @@ class PresentationController:
     async def handle_pdf_upload(self, event):
         self.model.set_generating(True)
         try:
-            # Call JS to parse PDF
             text = await window.extractPdfTextJS("pdf-upload")
             if text:
-                self.view.topic_input.value = text.strip()
-                # Optional: Trim text if too long for prompt context, though Flash handles 1M tokens
-                if len(text) > 30000:
-                    window.alert("PDF text is very long. Using the first ~30k characters.")
-                    self.view.topic_input.value = text[:30000] + "..."
+                self.view.topic_input.value = text.strip()[:30000]
             else:
-                window.alert("Could not extract text from PDF.")
+                window.alert("Não foi possível extrair o texto.")
         except Exception as e:
             console.error(str(e))
-            window.alert("Error parsing PDF")
         finally:
             self.model.set_generating(False)
 
     async def handle_generate(self, event=None):
         topic_text = self.view.topic_input.value
         if not topic_text.strip():
-            window.alert("Please enter a topic or upload a PDF.")
+            window.alert("Por favor, digite um tópico ou conteúdo.")
             return
 
         include_images = document.getElementById("chk-images").checked
@@ -573,18 +661,17 @@ class PresentationController:
         try:
             api_key = window.API_KEY
             if not api_key:
-                window.alert("API Key is missing.")
+                window.alert("API Key não encontrada.")
                 self.model.set_generating(False)
                 return
 
             json_response = await window.generateSlidesJS(api_key, topic_text, include_images)
             data = json.loads(json_response)
-            
             self.model.set_slides(data["topic"], data["slides"])
             
         except Exception as e:
             console.error(f"Error: {str(e)}")
-            window.alert("Failed to generate slides.")
+            window.alert("Falha ao gerar slides. Verifique o console.")
         finally:
             self.model.set_generating(False)
 
@@ -592,73 +679,90 @@ class PresentationController:
         self.model.set_generating(True)
         try:
             self.view.prepare_pdf_dom(self.model)
-            await asyncio.sleep(0.5) # Wait for DOM
+            await asyncio.sleep(0.5) 
             await window.generatePDFJS(self.model.topic.replace(" ", "_"))
-        except Exception as e:
-            console.error(e)
-            window.alert("Error generating PDF")
         finally:
             self.model.set_generating(False)
             self.view.pdf_container.innerHTML = ""
 
     def handle_export_pptx(self, event=None):
-        # Prepare data for JS function
-        # Convert Python objects to JS-compatible structure via JSON serialization
         slides_json = json.dumps(self.model.slides)
-        theme_json = json.dumps(self.model.current_theme)
-        
-        # Parse on JS side or pass parsed objects
-        # PyScript's JSON.parse can return a JS object
+        theme_json = json.dumps(self.model.theme)
         js_slides = JSON.parse(slides_json)
         js_theme = JSON.parse(theme_json)
-        
-        window.generatePPTXJS(self.model.topic, js_slides, js_theme)
+        window.generatePPTXJS(self.model.topic, js_slides, js_theme, self.model.font)
 
     def handle_export_html(self, event=None):
-        topic_slug = self.model.topic.replace(" ", "_")
-        slides_html = ""
-        theme = self.model.current_theme
+        theme = self.model.theme
+        font = self.model.font
+        slides_content = ""
+        
         for i, slide in enumerate(self.model.slides):
-            img_tag = ""
+            active_class = "active" if i == 0 else ""
+            
+            img_html = ""
             if "imageDescription" in slide and slide["imageDescription"]:
                 url = self.view.get_image_url(slide["imageDescription"])
-                img_tag = f'<img src="{url}" style="max-width:300px; float:right; margin: 10px; border-radius: 8px;">'
+                img_html = f'<div class="img-box"><img src="{url}" alt="Slide"></div>'
 
-            slides_html += f"""
-            <div class="slide" id="slide-{i}">
-                {img_tag}
-                <h1>{slide['title']}</h1>
-                <ul>{''.join([f'<li>{p}</li>' for p in slide['content']])}</ul>
-                <div class="footer">{i+1} / {len(self.model.slides)}</div>
-            </div>
-            """
-            
+            if slide["type"] == "title":
+                content = "".join([f'<p class="sub">{item}</p>' for item in slide["content"]])
+                slides_content += f'''
+                <div class="slide {active_class} title-slide">
+                    <h1>{slide['title']}</h1>
+                    <div class="divider"></div>
+                    {content}
+                    {img_html}
+                </div>'''
+            else:
+                content = "".join([f'<li>{item}</li>' for item in slide["content"]])
+                slides_content += f'''
+                <div class="slide {active_class}">
+                    <h2>{slide['title']}</h2>
+                    {img_html}
+                    <ul>{content}</ul>
+                </div>'''
+
+        script_open = "<script>"
+        script_close = "<" + "/script>"
+        
         full_html = f"""
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-<title>{self.model.topic}</title>
+<meta charset="UTF-8"><title>{self.model.topic}</title>
+<link href="https://fonts.googleapis.com/css2?family={font}:wght@300;600;800&display=swap" rel="stylesheet">
 <style>
-    body {{ font-family: sans-serif; background: #222; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 20px; }}
-    .slide {{ 
-        width: 800px; height: 600px; 
-        background: {theme['bg']}; color: {theme['text']}; 
-        padding: 40px; box-sizing: border-box; position: relative; 
-        box-shadow: 0 4px 6px rgba(0,0,0,0.3); overflow: hidden;
-    }}
-    .slide h1 {{ color: {theme['accent']}; }}
-    .slide ul {{ font-size: 1.2rem; line-height: 1.6; }}
-    .footer {{ position: absolute; bottom: 20px; right: 20px; opacity: 0.5; }}
+:root {{ --bg: {theme['bg']}; --text: {theme['text']}; --accent: {theme['accent']}; --font: '{font}', sans-serif; }}
+body {{ margin:0; font-family: var(--font); background: #eee; overflow: hidden; display: flex; justify-content: center; align-items: center; height: 100vh; }}
+.deck {{ width: 90vw; height: 90vh; background: var(--bg); color: var(--text); border-radius: 16px; box-shadow: 0 10px 40px rgba(0,0,0,0.1); position: relative; overflow: hidden; }}
+.slide {{ width: 100%; height: 100%; position: absolute; top: 0; left: 0; opacity: 0; transition: opacity 0.5s; padding: 60px 80px; box-sizing: border-box; display: flex; flex-direction: column; }}
+.slide.active {{ opacity: 1; z-index: 1; }}
+h1 {{ font-size: 4em; font-weight: 800; color: var(--accent); margin: 0 0 20px 0; }}
+h2 {{ font-size: 3em; font-weight: 700; border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 40px; }}
+ul {{ font-size: 1.8em; line-height: 1.6; }}
+li {{ margin-bottom: 15px; }}
+.title-slide {{ justify-content: center; text-align: center; align-items: center; }}
+.divider {{ width: 100px; height: 6px; background: var(--accent); margin: 0 auto 30px auto; border-radius: 3px; }}
+.sub {{ font-size: 1.5em; opacity: 0.8; }}
+.controls {{ position: fixed; bottom: 30px; right: 40px; z-index: 10; font-family: monospace; background: rgba(255,255,255,0.8); padding: 10px 20px; border-radius: 30px; color: #000; }}
+.img-box img {{ max-height: 300px; max-width: 40%; position: absolute; right: 50px; bottom: 50px; border-radius: 12px; box-shadow: 0 5px 20px rgba(0,0,0,0.2); }}
+.title-slide .img-box img {{ display: none; }}
 </style>
 </head>
 <body>
-    {slides_html}
-</body>
-</html>
-        """
-        window.downloadHTMLJS(f"{topic_slug}.html", full_html)
+<div class="deck">{slides_content}</div>
+<div class="controls">Use as setas para navegar</div>
+{script_open}
+let idx = 0; const slides = document.querySelectorAll('.slide');
+document.addEventListener('keydown', e => {{
+    if(e.key === 'ArrowRight' || e.key === ' ') {{ slides[idx].classList.remove('active'); idx = (idx+1)%slides.length; slides[idx].classList.add('active'); }}
+    if(e.key === 'ArrowLeft') {{ slides[idx].classList.remove('active'); idx = (idx-1+slides.length)%slides.length; slides[idx].classList.add('active'); }}
+}});
+{script_close}
+</body></html>"""
+        window.downloadHTMLJS(f"{self.model.topic.replace(' ', '_')}.html", full_html)
 
-# --- MAIN ---
 async def main():
     model = PresentationModel()
     view = PresentationView()
