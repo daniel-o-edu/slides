@@ -88,6 +88,11 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Edit Image Button Overlay */
+        .slide-image-container:hover .edit-image-btn {
+            opacity: 1;
+        }
     </style>
 </head>
 <body class="h-screen w-full flex overflow-hidden">
@@ -97,6 +102,38 @@
         import { GoogleGenAI, Type } from "@google/genai";
 
         window.API_KEY = process.env.API_KEY;
+
+        // --- 0. Helper: Convert URL/File to Base64 ---
+        window.urlToBase64 = async (url) => {
+            try {
+                const response = await fetch(url);
+                const blob = await response.blob();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (error) {
+                console.error("Error converting image to base64:", error);
+                return null;
+            }
+        };
+
+        window.readLocalFileToBase64 = (fileInputId) => {
+            return new Promise((resolve, reject) => {
+                const input = document.getElementById(fileInputId);
+                if (!input.files || !input.files[0]) {
+                    resolve(null);
+                    return;
+                }
+                const file = input.files[0];
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (e) => reject(e);
+                reader.readAsDataURL(file);
+            });
+        };
 
         // --- 1. PDF Extraction ---
         window.extractPdfTextJS = async (fileInputId) => {
@@ -201,7 +238,7 @@
             document.body.removeChild(element);
         };
 
-        window.generatePPTXJS = (topic, slidesData, themeData, fontName) => {
+        window.generatePPTXJS = async (topic, slidesData, themeData, fontName) => {
             const pres = new PptxGenJS();
             pres.layout = 'LAYOUT_4x3';
             pres.title = topic;
@@ -213,31 +250,37 @@
             const fontMap = { 'Inter': 'Arial', 'Roboto': 'Arial', 'Lora': 'Georgia', 'Montserrat': 'Verdana', 'Open Sans': 'Calibri' };
             const pptFont = fontMap[fontName] || 'Arial';
 
-            slidesData.forEach((slide) => {
+            for (const slide of slidesData) {
                 let pptSlide = pres.addSlide();
                 pptSlide.background = { color: bgHex };
-                const getImageUrl = (desc) => desc ? `https://image.pollinations.ai/prompt/${encodeURIComponent(desc)}?width=800&height=600&nologo=true` : null;
+
+                // Handle Image (Base64 or URL)
+                if (slide.imageUrl) {
+                    // Try to convert to Base64 if it's a URL to ensure it embeds
+                    let imgData = slide.imageUrl;
+                    if (imgData.startsWith('http')) {
+                        const b64 = await window.urlToBase64(imgData);
+                        if (b64) imgData = b64;
+                    }
+
+                    if (slide.type === 'title' || slide.type === 'summary') {
+                         pptSlide.addImage({ data: imgData, x: 0, y: 0, w: '100%', h: '100%', transparency: 85 });
+                    } else {
+                         pptSlide.addImage({ data: imgData, x: 7, y: 1.5, w: 2.5, h: 2.5 });
+                    }
+                }
 
                 if (slide.type === 'title' || slide.type === 'summary') {
                     pptSlide.addText(slide.title, { x: 0.5, y: 2.5, w: '90%', h: 1, fontSize: 36, color: accentHex, bold: true, align: 'center', fontFace: pptFont });
-                    if (slide.imageDescription) {
-                         const url = getImageUrl(slide.imageDescription);
-                         pptSlide.addImage({ path: url, x: 0, y: 0, w: '100%', h: '100%', transparency: 85 });
-                    }
                     if (slide.content.length > 0) {
                         pptSlide.addText(slide.content.join('\n'), { x: 1, y: 3.8, w: '80%', h: 2, fontSize: 18, color: textHex, align: 'center', fontFace: pptFont });
                     }
                 } else {
                     pptSlide.addText(slide.title, { x: 0.5, y: 0.5, w: '90%', h: 1, fontSize: 32, color: accentHex, bold: true, align: 'left', fontFace: pptFont });
-                    let contentW = 9;
-                    if (slide.imageDescription) {
-                        const url = getImageUrl(slide.imageDescription);
-                        pptSlide.addImage({ path: url, x: 7, y: 1.5, w: 2.5, h: 2.5 });
-                        contentW = 6;
-                    }
+                    let contentW = slide.imageUrl ? 6 : 9;
                     pptSlide.addText(slide.content.map(c => c).join('\n'), { x: 0.5, y: 1.5, w: contentW, h: 4.5, fontSize: 18, color: textHex, bullet: true, align: 'left', fontFace: pptFont, lineSpacing: 24 });
                 }
-            });
+            }
             pres.writeFile({ fileName: `${topic.replace(/\s+/g, '_')}.pptx` });
         }
     </script>
@@ -245,6 +288,9 @@
     <!-- App Shell -->
     <div id="app" class="flex w-full h-full">
         
+        <!-- Hidden Image Input for Edit/Upload -->
+        <input type="file" id="hidden-image-input" class="hidden" accept="image/*" />
+
         <!-- Minimalist Sidebar -->
         <div class="w-80 bg-white border-r border-gray-100 flex flex-col shadow-sm z-20 flex-shrink-0">
             <!-- Branding -->
@@ -301,6 +347,12 @@
                         </select>
                     </div>
 
+                    <!-- Add Background Image Button -->
+                    <button id="btn-bg-image" py-click="controller.handle_bg_change_click" class="w-full flex items-center justify-center gap-2 p-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50 hover:text-black transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                        Imagem de Fundo (Slide Atual)
+                    </button>
+
                     <!-- Custom Color Picker Menu -->
                     <div class="bg-gray-50 p-4 rounded-lg border border-gray-100 space-y-3">
                         <div class="flex items-center justify-between">
@@ -341,13 +393,13 @@
                 <div class="space-y-4">
                     <label class="text-xs font-bold text-gray-400 uppercase tracking-wider">Exportar</label>
                     <div class="grid grid-cols-3 gap-2">
-                        <button py-click="controller.handle_export_pptx" class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:bg-orange-50 hover:border-orange-200 hover:text-orange-600 transition-all text-gray-500">
+                        <button id="btn-export-pptx" py-click="controller.handle_export_pptx" disabled class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg transition-all text-gray-400 cursor-not-allowed opacity-50">
                             <span class="text-xs font-bold">PPTX</span>
                         </button>
-                        <button py-click="controller.handle_export_pdf" class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:bg-red-50 hover:border-red-200 hover:text-red-600 transition-all text-gray-500">
+                        <button id="btn-export-pdf" py-click="controller.handle_export_pdf" disabled class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg transition-all text-gray-400 cursor-not-allowed opacity-50">
                             <span class="text-xs font-bold">PDF</span>
                         </button>
-                        <button py-click="controller.handle_export_html" class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg hover:bg-blue-50 hover:border-blue-200 hover:text-blue-600 transition-all text-gray-500">
+                        <button id="btn-export-html" py-click="controller.handle_export_html" disabled class="flex flex-col items-center justify-center p-3 border border-gray-200 rounded-lg transition-all text-gray-400 cursor-not-allowed opacity-50">
                             <span class="text-xs font-bold">HTML</span>
                         </button>
                     </div>
@@ -363,10 +415,10 @@
                 <div class="flex items-center gap-4">
                     <span id="slide-counter" class="text-xs font-mono bg-gray-100 text-gray-600 px-3 py-1.5 rounded-full">1 / 1</span>
                     <div class="flex gap-1 bg-gray-100 p-1 rounded-lg">
-                        <button py-click="controller.prev_slide" class="p-2 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all">
+                        <button py-click="controller.prev_slide" title="Anterior (PageUp)" class="p-2 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
                         </button>
-                        <button py-click="controller.next_slide" class="p-2 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all">
+                        <button py-click="controller.next_slide" title="Próximo (PageDown)" class="p-2 hover:bg-white hover:shadow-sm rounded-md text-gray-600 transition-all">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
                         </button>
                     </div>
@@ -395,9 +447,10 @@ from pyodide.ffi import create_proxy
 INITIAL_SLIDES = [
     {
         "title": "Bem-vindo ao AutoSlide", 
-        "content": ["Importe um PDF ou digite um tópico", "Customize as cores no menu lateral", "Clique em Gerar Slides"], 
+        "content": ["Importe um PDF ou digite um tópico", "Customize as cores no menu lateral", "Clique em Gerar Slides", "Use PageUp/PageDown para navegar"], 
         "type": "title",
-        "imageDescription": ""
+        "imageDescription": "",
+        "imageUrl": ""
     }
 ]
 
@@ -407,7 +460,6 @@ class PresentationModel:
     def __init__(self):
         self.topic = "Minha Apresentação"
         self.slides = INITIAL_SLIDES
-        # Default Theme (Custom Object)
         self.theme = {
             "bg": "#ffffff",
             "text": "#1a1a1a",
@@ -427,9 +479,25 @@ class PresentationModel:
 
     def set_slides(self, topic, slides):
         self.topic = topic
-        self.slides = slides
+        # Pre-process slides to generate image URLs from descriptions if not present
+        processed_slides = []
+        for slide in slides:
+            s = slide.copy()
+            if "imageDescription" in s and s["imageDescription"] and "imageUrl" not in s:
+                encoded = window.encodeURIComponent(s["imageDescription"])
+                s["imageUrl"] = f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true"
+            elif "imageUrl" not in s:
+                s["imageUrl"] = ""
+            processed_slides.append(s)
+            
+        self.slides = processed_slides
         self.current_index = 0
         self.notify()
+
+    def update_slide_image(self, index, new_url):
+        if 0 <= index < len(self.slides):
+            self.slides[index]["imageUrl"] = new_url
+            self.notify()
 
     def update_theme_color(self, key, value):
         if key in self.theme:
@@ -483,10 +551,24 @@ class PresentationView:
         self.preset_navy = document.getElementById("preset-navy")
         self.preset_forest = document.getElementById("preset-forest")
 
+        # Export Buttons
+        self.btn_export_pptx = document.getElementById("btn-export-pptx")
+        self.btn_export_pdf = document.getElementById("btn-export-pdf")
+        self.btn_export_html = document.getElementById("btn-export-html")
+
+        # Hidden Image Input
+        self.hidden_image_input = document.getElementById("hidden-image-input")
+
+        self.controller_proxy = None
+
     def init_ui(self, model, controller_proxy):
+        self.controller_proxy = controller_proxy
         # Bind Main Inputs
         self.pdf_upload.addEventListener("change", create_proxy(controller_proxy.handle_pdf_upload))
         self.font_select.addEventListener("change", create_proxy(controller_proxy.handle_font_change))
+        
+        # Bind Hidden Image Input
+        self.hidden_image_input.addEventListener("change", create_proxy(controller_proxy.handle_file_input_change))
 
         # Bind Colors
         self.col_bg.addEventListener("input", create_proxy(lambda e: controller_proxy.handle_color_change("bg", e.target.value)))
@@ -499,68 +581,75 @@ class PresentationView:
         self.preset_navy.addEventListener("click", create_proxy(lambda e: controller_proxy.apply_preset("#1e1b4b", "#e0e7ff", "#818cf8")))
         self.preset_forest.addEventListener("click", create_proxy(lambda e: controller_proxy.apply_preset("#022c22", "#ecfdf5", "#34d399")))
 
-        self.update(model)
+        # Bind Keyboard Navigation (Global)
+        document.addEventListener("keydown", create_proxy(controller_proxy.handle_keydown))
 
-    def get_image_url(self, description):
-        if not description: return ""
-        encoded = window.encodeURIComponent(description)
-        return f"https://image.pollinations.ai/prompt/{encoded}?width=800&height=600&nologo=true"
+        self.update(model)
 
     def generate_html_string(self, slide, theme, index, total, font, is_preview=True):
         bg = theme["bg"]
         text = theme["text"]
         accent = theme["accent"]
         
-        # Base typography scales
         base_style = f"background-color: {bg}; color: {text}; font-family: '{font}', sans-serif;"
         
         img_html = ""
-        if "imageDescription" in slide and slide["imageDescription"]:
-             url = self.get_image_url(slide["imageDescription"])
+        edit_btn_html = ""
+
+        if "imageUrl" in slide and slide["imageUrl"]:
+             url = slide["imageUrl"]
              if slide["type"] in ["title", "summary"]:
                  img_html = f'<div class="absolute inset-0 z-0 opacity-20 pointer-events-none"><img src="{url}" class="w-full h-full object-cover filter grayscale-[20%]" /></div>'
              else:
                  img_html = f'''
-                 <div class="flex justify-end items-center my-4 h-full absolute right-12 top-0 w-1/3">
+                 <div class="flex justify-end items-center my-4 h-full absolute right-12 top-0 w-1/3 slide-image-container group z-10">
                     <img src="{url}" class="w-full h-auto rounded-lg shadow-xl object-cover aspect-square" />
+                    {'<button class="edit-image-btn absolute top-2 right-2 bg-black/70 text-white p-2 rounded-full opacity-0 transition-opacity hover:bg-black" onclick="controller.handle_image_upload_trigger(' + str(index) + ')"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg></button>' if is_preview else ''}
                  </div>'''
+                 
+             # Edit button for full background images (Title/Summary)
+             if is_preview and slide["type"] in ["title", "summary"]:
+                 edit_btn_html = f'<button class="absolute top-4 right-4 z-50 bg-white/20 hover:bg-white/40 backdrop-blur text-{text} p-2 rounded-lg border border-{text}/20" onclick="controller.handle_image_upload_trigger({index})">Trocar Imagem</button>'
 
         content_html = ""
+        
+        # CSS Overflow / Height safety classes are added here
         
         if slide["type"] == "title":
             items = "".join([f'<p class="text-xl opacity-80 mt-6 font-light">{item}</p>' for item in slide["content"]])
             content_html = f'''
                 {img_html}
-                <div class="relative z-10 flex flex-col items-center justify-center h-full p-16 text-center">
-                    <div class="w-16 h-2 mb-8 rounded-full" style="background-color: {accent}"></div>
-                    <h1 class="text-6xl font-bold mb-4 leading-tight tracking-tight">{slide["title"]}</h1>
-                    <div class="max-w-2xl">{items}</div>
+                {edit_btn_html}
+                <div class="relative z-10 flex flex-col items-center justify-center h-full p-16 text-center max-h-full overflow-hidden">
+                    <div class="w-16 h-2 mb-8 rounded-full flex-shrink-0" style="background-color: {accent}"></div>
+                    <h1 class="text-6xl font-bold mb-4 leading-tight tracking-tight max-h-[40%] overflow-hidden">{slide["title"]}</h1>
+                    <div class="max-w-2xl overflow-hidden">{items}</div>
                 </div>
             '''
         elif slide["type"] == "summary":
             items = "".join([f'<p class="text-2xl mb-4 leading-relaxed font-light">{item}</p>' for item in slide["content"]])
             content_html = f'''
                 {img_html}
-                <div class="relative z-10 flex flex-col items-center justify-center h-full p-16 text-center">
-                    <h2 class="text-4xl font-bold mb-8" style="color: {accent}">{slide["title"]}</h2>
-                    <div class="max-w-3xl border-t border-b py-8" style="border-color: {text}30">
+                {edit_btn_html}
+                <div class="relative z-10 flex flex-col items-center justify-center h-full p-16 text-center max-h-full overflow-hidden">
+                    <h2 class="text-4xl font-bold mb-8 flex-shrink-0" style="color: {accent}">{slide["title"]}</h2>
+                    <div class="max-w-3xl border-t border-b py-8 overflow-hidden" style="border-color: {text}30">
                         {items}
                     </div>
                 </div>
             '''
         else:
             items = "".join([f'<li class="mb-4 text-2xl leading-relaxed pl-2">{item}</li>' for item in slide["content"]])
-            # Logic for layout based on image presence
             width_class = "w-3/5" if img_html else "w-full max-w-4xl"
             
             content_html = f'''
-                <div class="relative z-10 flex flex-col h-full p-12 px-16">
-                    <div class="flex items-center mb-10 pb-4 border-b-2" style="border-color: {accent}">
-                        <h2 class="text-4xl font-bold tracking-tight">{slide["title"]}</h2>
+                <div class="relative z-10 flex flex-col h-full p-12 px-16 max-h-full overflow-hidden">
+                    <div class="flex items-center mb-10 pb-4 border-b-2 flex-shrink-0" style="border-color: {accent}">
+                        <h2 class="text-4xl font-bold tracking-tight truncate">{slide["title"]}</h2>
                     </div>
                     {img_html}
-                    <div class="{width_class} pr-8">
-                        <ul class="list-disc pl-8 marker:text-[{accent}]" style="marker-color: {accent}">{items}</ul>
+                    <div class="{width_class} pr-8 flex-1 overflow-hidden">
+                        <ul class="list-disc pl-8 marker:text-[{accent}] max-h-full overflow-hidden" style="marker-color: {accent}">{items}</ul>
                     </div>
                 </div>
             '''
@@ -575,7 +664,6 @@ class PresentationView:
         '''
 
     def update(self, model):
-        # Sync Inputs
         self.col_bg.value = model.theme["bg"]
         self.hex_bg.innerText = model.theme["bg"].upper()
         
@@ -585,7 +673,6 @@ class PresentationView:
         self.col_accent.value = model.theme["accent"]
         self.hex_accent.innerText = model.theme["accent"].upper()
 
-        # Render Slide
         current_slide = model.slides[model.current_index]
         html = self.generate_html_string(
             current_slide, 
@@ -598,14 +685,32 @@ class PresentationView:
         self.header_topic.innerText = model.topic
         self.slide_counter.innerText = f"{model.current_index + 1} / {len(model.slides)}"
 
+        # Handle Generation State & Export Buttons
         if model.is_generating:
             self.generate_btn.disabled = True
             self.generate_btn.innerHTML = '<div class="loading-spinner inline-block mr-2"></div> Processando...'
             self.generate_btn.classList.add("opacity-75", "cursor-not-allowed")
+            
+            # Disable Exports
+            for btn in [self.btn_export_pptx, self.btn_export_pdf, self.btn_export_html]:
+                btn.disabled = True
+                btn.classList.add("opacity-50", "cursor-not-allowed")
+                btn.classList.remove("hover:bg-orange-50", "hover:text-orange-600", "hover:bg-red-50", "hover:text-red-600", "hover:bg-blue-50", "hover:text-blue-600")
+
         else:
             self.generate_btn.disabled = False
             self.generate_btn.innerHTML = 'Gerar Slides'
             self.generate_btn.classList.remove("opacity-75", "cursor-not-allowed")
+            
+            # Enable Exports
+            for btn in [self.btn_export_pptx, self.btn_export_pdf, self.btn_export_html]:
+                btn.disabled = False
+                btn.classList.remove("opacity-50", "cursor-not-allowed")
+                
+            # Re-add hover classes (simplified)
+            self.btn_export_pptx.classList.add("hover:bg-orange-50", "hover:text-orange-600")
+            self.btn_export_pdf.classList.add("hover:bg-red-50", "hover:text-red-600")
+            self.btn_export_html.classList.add("hover:bg-blue-50", "hover:text-blue-600")
 
     def prepare_pdf_dom(self, model):
         html_all = ""
@@ -617,7 +722,16 @@ class PresentationController:
     def __init__(self, model, view):
         self.model = model
         self.view = view
+        self.pending_image_slide_index = -1
         self.view.init_ui(model, self)
+
+    def handle_keydown(self, event):
+        if event.key == "PageUp":
+            self.prev_slide()
+            event.preventDefault()
+        elif event.key == "PageDown":
+            self.next_slide()
+            event.preventDefault()
 
     def handle_color_change(self, key, value):
         self.model.update_theme_color(key, value)
@@ -635,6 +749,37 @@ class PresentationController:
 
     def prev_slide(self, event=None):
         self.model.prev_slide()
+
+    # Triggered by Edit Icon inside slide OR Sidebar button
+    def handle_image_upload_trigger(self, index):
+        self.pending_image_slide_index = index
+        # Trigger the hidden file input
+        self.view.hidden_image_input.click()
+
+    # Triggered by "Imagem de Fundo" button in sidebar for CURRENT slide
+    def handle_bg_change_click(self, event=None):
+        self.handle_image_upload_trigger(self.model.current_index)
+
+    async def handle_file_input_change(self, event):
+        if self.pending_image_slide_index == -1:
+            return
+            
+        try:
+            # Read file via JS helper
+            base64_img = await window.readLocalFileToBase64("hidden-image-input")
+            if base64_img:
+                self.model.update_slide_image(self.pending_image_slide_index, base64_img)
+        except Exception as e:
+            console.error(f"Error reading file: {str(e)}")
+            window.alert("Erro ao ler imagem.")
+        finally:
+            # Reset input value so same file can be selected again if needed
+            self.view.hidden_image_input.value = ""
+            self.pending_image_slide_index = -1
+
+    # Keep old method for backward compat if needed, but updated logic relies on file upload now
+    def handle_image_edit(self, index):
+        self.handle_image_upload_trigger(index)
 
     async def handle_pdf_upload(self, event):
         self.model.set_generating(True)
@@ -676,6 +821,7 @@ class PresentationController:
             self.model.set_generating(False)
 
     async def handle_export_pdf(self, event=None):
+        if self.model.is_generating: return
         self.model.set_generating(True)
         try:
             self.view.prepare_pdf_dom(self.model)
@@ -685,48 +831,69 @@ class PresentationController:
             self.model.set_generating(False)
             self.view.pdf_container.innerHTML = ""
 
-    def handle_export_pptx(self, event=None):
-        slides_json = json.dumps(self.model.slides)
-        theme_json = json.dumps(self.model.theme)
-        js_slides = JSON.parse(slides_json)
-        js_theme = JSON.parse(theme_json)
-        window.generatePPTXJS(self.model.topic, js_slides, js_theme, self.model.font)
+    async def handle_export_pptx(self, event=None):
+        if self.model.is_generating: return
+        self.model.set_generating(True)
+        try:
+            slides_copy = json.loads(json.dumps(self.model.slides))
+            # Convert images to Base64 for PPTX embedding
+            for slide in slides_copy:
+                if "imageUrl" in slide and slide["imageUrl"]:
+                     b64 = await window.urlToBase64(slide["imageUrl"])
+                     if b64:
+                         slide["imageUrl"] = b64
 
-    def handle_export_html(self, event=None):
-        theme = self.model.theme
-        font = self.model.font
-        slides_content = ""
-        
-        for i, slide in enumerate(self.model.slides):
-            active_class = "active" if i == 0 else ""
+            slides_json = json.dumps(slides_copy)
+            theme_json = json.dumps(self.model.theme)
+            js_slides = JSON.parse(slides_json)
+            js_theme = JSON.parse(theme_json)
+            await window.generatePPTXJS(self.model.topic, js_slides, js_theme, self.model.font)
+        except Exception as e:
+            console.error(str(e))
+            window.alert("Erro ao exportar PPTX")
+        finally:
+             self.model.set_generating(False)
+
+    async def handle_export_html(self, event=None):
+        if self.model.is_generating: return
+        self.model.set_generating(True)
+        try:
+            theme = self.model.theme
+            font = self.model.font
+            slides_content = ""
             
-            img_html = ""
-            if "imageDescription" in slide and slide["imageDescription"]:
-                url = self.view.get_image_url(slide["imageDescription"])
-                img_html = f'<div class="img-box"><img src="{url}" alt="Slide"></div>'
+            for i, slide in enumerate(self.model.slides):
+                active_class = "active" if i == 0 else ""
+                
+                img_html = ""
+                if "imageUrl" in slide and slide["imageUrl"]:
+                    # Convert to Base64 for standalone HTML
+                    b64 = await window.urlToBase64(slide["imageUrl"])
+                    url = b64 if b64 else slide["imageUrl"]
+                    img_html = f'<div class="img-box"><img src="{url}" alt="Slide"></div>'
 
-            if slide["type"] == "title":
-                content = "".join([f'<p class="sub">{item}</p>' for item in slide["content"]])
-                slides_content += f'''
-                <div class="slide {active_class} title-slide">
-                    <h1>{slide['title']}</h1>
-                    <div class="divider"></div>
-                    {content}
-                    {img_html}
-                </div>'''
-            else:
-                content = "".join([f'<li>{item}</li>' for item in slide["content"]])
-                slides_content += f'''
-                <div class="slide {active_class}">
-                    <h2>{slide['title']}</h2>
-                    {img_html}
-                    <ul>{content}</ul>
-                </div>'''
+                if slide["type"] == "title":
+                    content = "".join([f'<p class="sub">{item}</p>' for item in slide["content"]])
+                    slides_content += f'''
+                    <div class="slide {active_class} title-slide">
+                        <h1>{slide['title']}</h1>
+                        <div class="divider"></div>
+                        {content}
+                        {img_html}
+                    </div>'''
+                else:
+                    content = "".join([f'<li>{item}</li>' for item in slide["content"]])
+                    slides_content += f'''
+                    <div class="slide {active_class}">
+                        <h2>{slide['title']}</h2>
+                        {img_html}
+                        <ul>{content}</ul>
+                    </div>'''
 
-        script_open = "<script>"
-        script_close = "<" + "/script>"
-        
-        full_html = f"""
+            script_open = "<script>"
+            script_close = "<" + "/script>"
+            
+            full_html = f"""
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -752,23 +919,32 @@ li {{ margin-bottom: 15px; }}
 </head>
 <body>
 <div class="deck">{slides_content}</div>
-<div class="controls">Use as setas para navegar</div>
+<div class="controls">Use PageUp/PageDown ou Setas</div>
 {script_open}
 let idx = 0; const slides = document.querySelectorAll('.slide');
 document.addEventListener('keydown', e => {{
-    if(e.key === 'ArrowRight' || e.key === ' ') {{ slides[idx].classList.remove('active'); idx = (idx+1)%slides.length; slides[idx].classList.add('active'); }}
-    if(e.key === 'ArrowLeft') {{ slides[idx].classList.remove('active'); idx = (idx-1+slides.length)%slides.length; slides[idx].classList.add('active'); }}
+    if(e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {{ slides[idx].classList.remove('active'); idx = (idx+1)%slides.length; slides[idx].classList.add('active'); }}
+    if(e.key === 'ArrowLeft' || e.key === 'PageUp') {{ slides[idx].classList.remove('active'); idx = (idx-1+slides.length)%slides.length; slides[idx].classList.add('active'); }}
 }});
 {script_close}
 </body></html>"""
-        window.downloadHTMLJS(f"{self.model.topic.replace(' ', '_')}.html", full_html)
+            window.downloadHTMLJS(f"{self.model.topic.replace(' ', '_')}.html", full_html)
+        finally:
+            self.model.set_generating(False)
 
 async def main():
     model = PresentationModel()
     view = PresentationView()
     model.subscribe(view)
+    
     global controller
-    controller = PresentationController(model, view)
+    inst_controller = PresentationController(model, view)
+    
+    # Assign to Python global scope for py-click
+    controller = inst_controller
+    
+    # Assign to Window for JS onclick (used by generated edit buttons)
+    window.controller = create_proxy(inst_controller)
 
 asyncio.ensure_future(main())
     </script>
